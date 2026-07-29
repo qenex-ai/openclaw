@@ -871,6 +871,10 @@ export const en: TranslationMap = {
   },
   agents: {
     noAgents: "No agents",
+    defaults: {
+      title: "Agent defaults",
+      description: "Defaults every agent inherits unless overridden.",
+    },
     copyId: "Copy ID",
     copyIdTitle: "Copy agent ID to clipboard",
     default: "Default",
@@ -1996,7 +2000,9 @@ export const en: TranslationMap = {
       intro: "No existing AI access was detected. Install one of these tools, then check again.",
     },
     unavailable: {
-      title: "Detected, but not auto-tested",
+      title: "Found, but needs attention",
+      signIn: "Sign in with {provider}",
+      useApiKey: "Use API key",
     },
     signIn: {
       title: "Sign in with a provider",
