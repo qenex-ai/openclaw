@@ -82,7 +82,23 @@ type ReadTruncationDetails = {
 const OFFSET_BEYOND_EOF_RE = /^Offset \d+ is beyond end of file \(\d+ lines total\)$/;
 const READ_CONTINUATION_NOTICE_RE =
   /\n\n\[(?:Showing lines [^\]]*?Use offset=\d+ to continue\.|\d+ more lines in file\. Use offset=\d+ to continue\.)\]\s*$/;
-const DAILY_MEMORY_PATH_RE = /^memory\/\d{4}-\d{2}-\d{2}\.md$/;
+// Matches the daily-memory file whether the model addressed it relative to the
+// workspace ("memory/2026-07-30.md") or absolutely
+// ("/root/.openclaw/workspace/memory/2026-07-30.md"). Both name the same file,
+// and both should report "not written yet" rather than a raw ENOENT.
+//
+// Anchoring this to ^memory/ meant an absolute path missed the graceful branch
+// entirely: the agent asked for today's memory before it had been written, got
+// `Error: ENOENT ... access '/root/.openclaw/workspace/memory/2026-07-30.md'`
+// as a hard tool failure, and — because the bridge call had already dispatched —
+// burned its single Code Mode repair attempt on a file that was simply absent.
+//
+// A suffix match is safe here. This regex never grants access: reads are already
+// confined by the workspace-root guard (see wrapWithWorkspaceGuards below), and
+// the path has ALREADY failed with ENOENT by the time this is consulted. The only
+// thing it decides is how an absent file is reported. The leading "/" boundary
+// keeps it from matching a file merely named like one, e.g. "notmemory/…".
+const DAILY_MEMORY_PATH_RE = /(?:^|\/)memory\/\d{4}-\d{2}-\d{2}\.md$/;
 
 function resolveAdaptiveReadMaxBytes(options?: OpenClawReadToolOptions): number {
   const contextWindowTokens = options?.modelContextWindowTokens;

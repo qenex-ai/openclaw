@@ -184,6 +184,28 @@ describe("FS tools with workspaceOnly=false", () => {
     });
   });
 
+  it("returns optional not-found context for an ABSOLUTE daily memory path", async () => {
+    // Regression: DAILY_MEMORY_PATH_RE was anchored to ^memory/, so a model
+    // addressing the same file absolutely missed the graceful branch and got a
+    // raw ENOENT as a hard tool failure — which also consumed its single Code
+    // Mode repair attempt. Both spellings name one file and must report alike.
+    const absolute = path.join(tmpDir, "memory", "2026-05-15.md");
+    const result = await runFsTool(
+      "read",
+      "test-call-missing-daily-memory-absolute",
+      {
+        path: absolute,
+      },
+      undefined,
+    );
+    expect(result.details).toStrictEqual({
+      kind: "not_found",
+      status: "not_found",
+      path: absolute,
+      optional: true,
+    });
+  });
+
   it("still throws for ordinary missing read paths", async () => {
     const readTool = requireTool(toolsFor(undefined), "read");
 
