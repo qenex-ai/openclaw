@@ -139,8 +139,16 @@ describe("AppSidebar multi-select", () => {
     await waitForFast(() => expect(harness.patchMany).toHaveBeenCalledOnce());
     expect(harness.patchMany).toHaveBeenCalledWith(
       [
-        { key: "agent:main:a", agentId: "main" },
-        { key: "agent:main:b", agentId: "main" },
+        {
+          key: "agent:main:a",
+          agentId: "main",
+          expectedSessionId: "session:agent:main:a",
+        },
+        {
+          key: "agent:main:b",
+          agentId: "main",
+          expectedSessionId: "session:agent:main:b",
+        },
       ],
       { archived: true },
     );
@@ -190,13 +198,21 @@ describe("AppSidebar multi-select", () => {
       1,
       "agent:main:a",
       { archived: true },
-      { agentId: "main", deferListRefresh: true },
+      {
+        agentId: "main",
+        expectedSessionId: "session:agent:main:a",
+        deferListRefresh: true,
+      },
     );
     expect(harness.patch).toHaveBeenNthCalledWith(
       2,
       "agent:main:b",
       { archived: true },
-      { agentId: "main", deferListRefresh: true },
+      {
+        agentId: "main",
+        expectedSessionId: "session:agent:main:b",
+        deferListRefresh: true,
+      },
     );
     expect(harness.patchMany).not.toHaveBeenCalled();
     expect(request.mock.calls.filter(([method]) => method === "sessions.patchMany")).toEqual([]);
@@ -227,13 +243,21 @@ describe("AppSidebar multi-select", () => {
       1,
       "agent:main:a",
       { archived: true },
-      { agentId: "main", deferListRefresh: true },
+      {
+        agentId: "main",
+        expectedSessionId: "session:agent:main:a",
+        deferListRefresh: true,
+      },
     );
     expect(harness.patch).toHaveBeenNthCalledWith(
       2,
       "agent:main:b",
       { archived: true },
-      { agentId: "main", deferListRefresh: true },
+      {
+        agentId: "main",
+        expectedSessionId: "session:agent:main:b",
+        deferListRefresh: true,
+      },
     );
     expect(request.mock.calls.filter(([method]) => method === "sessions.patchMany")).toHaveLength(
       1,
@@ -631,6 +655,32 @@ describe("AppSidebar catalog session rows", () => {
     }
   });
 
+  it("keeps a selected adopted catalog session as one row", async () => {
+    vi.useFakeTimers();
+    try {
+      const { sidebar } = await mountWithCatalog(
+        catalogList([
+          {
+            threadId: "thread-1",
+            name: "Release checklist",
+            sessionKey: "agent:main:adopted-codex",
+          },
+        ]),
+        ["agent:main:main", "agent:main:adopted-codex"],
+      );
+      // Selecting the adopted session must not re-insert it as a thread row:
+      // the catalog section already renders it live.
+      sidebar.sessionKey = "agent:main:adopted-codex";
+      await sidebar.updateComplete;
+
+      const rows = [...sidebar.querySelectorAll('[data-session-key="agent:main:adopted-codex"]')];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.closest('[data-session-section="catalog:codex"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("binds the adopted session immediately on the catalog-continued event", async () => {
     vi.useFakeTimers();
     try {
@@ -657,6 +707,32 @@ describe("AppSidebar catalog session rows", () => {
       const rows = [...sidebar.querySelectorAll('[data-session-key="agent:main:adopted-codex"]')];
       expect(rows).toHaveLength(1);
       expect(rows[0]?.closest('[data-session-section="catalog:codex"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns an adopted session to the thread list when its catalog is hidden", async () => {
+    vi.useFakeTimers();
+    try {
+      const { sidebar } = await mountWithCatalog(
+        catalogList([
+          {
+            threadId: "thread-1",
+            name: "Release checklist",
+            sessionKey: "agent:main:adopted-codex",
+          },
+        ]),
+        ["agent:main:main", "agent:main:adopted-codex"],
+      );
+      // Hiding the catalog removes the live row; the adopted key must fall
+      // back to a regular thread row, not vanish from the entire sidebar.
+      sidebar.hiddenSessionCatalogIds = new Set(["codex"]);
+      await sidebar.updateComplete;
+
+      const rows = [...sidebar.querySelectorAll('[data-session-key="agent:main:adopted-codex"]')];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.closest('[data-session-section="catalog:codex"]')).toBeNull();
     } finally {
       vi.useRealTimers();
     }

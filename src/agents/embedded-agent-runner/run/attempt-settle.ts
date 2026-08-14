@@ -9,6 +9,7 @@ import {
   setAgentRunAttemptTerminalFailure,
   type AgentRunAttemptFailureSource,
 } from "../../agent-run-terminal-outcome.js";
+import { sanitizeCompactionReplayMessages } from "../../compaction-replay.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import { settleRequesterAfterSessionSpawns } from "../../subagents/registry/subagent-registry.js";
 import type { NormalizedUsage } from "../../usage.js";
@@ -23,7 +24,10 @@ import type {
 import { completeEmbeddedAttemptAfterTurn } from "./attempt-finalize.js";
 import type { prepareEmbeddedAttemptHistory } from "./attempt-history.js";
 import { runEmbeddedAttemptPromptPhase } from "./attempt-prompt-phase.js";
-import { completeEmbeddedAttemptResult } from "./attempt-result.js";
+import {
+  completeEmbeddedAttemptResult,
+  type EmbeddedRunAttemptWithReceiptEvidence,
+} from "./attempt-result.js";
 import type { prepareEmbeddedAttemptStream } from "./attempt-stream-prepare.js";
 import { settleEmbeddedAttemptStream } from "./attempt-stream-settle.js";
 import type { installEmbeddedAttemptStreamGuards } from "./attempt-stream.js";
@@ -104,10 +108,10 @@ function cleanupEmbeddedAttemptStreamExecution(input: StreamCleanupInput): Error
 
 export async function runEmbeddedAttemptSettledPhase(
   input: EmbeddedAttemptExecutionPhaseInput & {
-    getRepairedRejectedThinkingReplay: () => boolean;
+    getRepairedRejectedProviderReplay: () => boolean;
     preparedStreamRuntime: PreparedStreamRuntime;
   },
-): Promise<EmbeddedRunAttemptResult> {
+): Promise<EmbeddedRunAttemptWithReceiptEvidence> {
   const { attempt, state } = input;
   const { bootstrap, bundleTools, sessionRuntime, systemPrompt, toolBase, toolCatalog } =
     input.prepared;
@@ -173,6 +177,7 @@ export async function runEmbeddedAttemptSettledPhase(
   let lastAssistant: AssistantMessage | undefined;
   let currentAttemptAssistant: EmbeddedRunAttemptResult["currentAttemptAssistant"];
   let currentAttemptCompletedAssistant: EmbeddedRunAttemptResult["currentAttemptCompletedAssistant"];
+  let successfulNestedToolNames: EmbeddedRunAttemptWithReceiptEvidence["successfulNestedToolNames"];
   let attemptUsage: NormalizedUsage | undefined;
   let cacheBreak: PromptCacheBreak | null = null;
   let contextBudgetStatus: EmbeddedRunAttemptResult["contextBudgetStatus"];
@@ -368,8 +373,10 @@ export async function runEmbeddedAttemptSettledPhase(
     }
     let settledStream: Awaited<ReturnType<typeof settleEmbeddedAttemptStream>>;
     try {
-      if (input.getRepairedRejectedThinkingReplay() && !rewoundBeforeAgentFinalizeRevision) {
-        activeSession.agent.state.messages = sessionManager.buildSessionContext().messages;
+      if (input.getRepairedRejectedProviderReplay() && !rewoundBeforeAgentFinalizeRevision) {
+        activeSession.agent.state.messages = sanitizeCompactionReplayMessages(
+          sessionManager.buildSessionContext().messages,
+        );
       }
       const settleTerminal = readTerminal();
       const streamSettleState = {
@@ -428,7 +435,9 @@ export async function runEmbeddedAttemptSettledPhase(
         await input.sessionLock.withOwnedTranscriptWrite(() => {
           // Settlement classifies the completed attempt from its original
           // in-memory messages. Later work always sees the rewound branch.
-          activeSession.agent.state.messages = sessionManager.buildSessionContext().messages;
+          activeSession.agent.state.messages = sanitizeCompactionReplayMessages(
+            sessionManager.buildSessionContext().messages,
+          );
         });
       }
     }
@@ -447,6 +456,7 @@ export async function runEmbeddedAttemptSettledPhase(
     lastAssistant = settledStream.lastAssistant;
     currentAttemptAssistant = settledStream.currentAttemptAssistant;
     currentAttemptCompletedAssistant = settledStream.currentAttemptCompletedAssistant;
+    successfulNestedToolNames = settledStream.successfulNestedToolNames;
     attemptUsage = settledStream.attemptUsage;
     cacheBreak = settledStream.cacheBreak;
     sessionRuntimeState.promptCache = settledStream.promptCache;
@@ -530,6 +540,7 @@ export async function runEmbeddedAttemptSettledPhase(
       lastAssistant,
       currentAttemptAssistant,
       currentAttemptCompletedAssistant,
+      successfulNestedToolNames,
       attemptUsage,
       promptCache: sessionRuntimeState.promptCache,
       contextBudgetStatus,
@@ -553,6 +564,7 @@ export async function runEmbeddedAttemptSettledPhase(
   if (attempt.sessionKey && result.acceptedSessionSpawns?.length) {
     settleRequesterAfterSessionSpawns({
       requesterSessionKey: attempt.sessionKey,
+      requesterAgentId: input.setup.sessionAgentId,
       requesterTurnRunId: attempt.runId,
       requesterYielded: result.yieldDetected === true,
       acceptedSessionSpawns: result.acceptedSessionSpawns,
